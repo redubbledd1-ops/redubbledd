@@ -1,6 +1,20 @@
+const cors = require("cors");
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+
+const DATA_FILE = path.join(__dirname, 'data.json');
+const readData = () => {
+    try {
+        return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    } catch {
+        return {};
+    }
+};
+
+const writeData = (data) => {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+};
 
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
@@ -45,6 +59,43 @@ const collectSwfFiles = (dir, base = '') => {
 };
 
 const server = http.createServer((req, res) => {
+    // SAVE
+    if (req.url === '/api/save' && req.method === 'POST') {
+        let body = '';
+
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+
+        req.on('end', () => {
+            try {
+                const { page, html } = JSON.parse(body);
+
+                const data = readData();
+                data[page] = html; // 🔥 hier fixen we het probleem
+                writeData(data);
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+            } catch (e) {
+                console.error(e);
+                res.writeHead(500);
+                res.end(JSON.stringify({ error: 'Save failed' }));
+            }
+        });
+
+        return;
+    }
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+        res.writeHead(200);
+        return res.end();
+    }
+
+
     if (req.url === '/api/swf') {
         const gamesDir = path.join(__dirname, 'Games');
         const files = collectSwfFiles(gamesDir);
@@ -80,6 +131,55 @@ const server = http.createServer((req, res) => {
         }
         return;
     }
+
+
+
+    // 💾 SAVE content (per pagina)
+    if (req.url === '/api/save' && req.method === 'POST') {
+        let body = '';
+
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+
+        req.on('end', () => {
+            const filePath = path.join(__dirname, 'content.json');
+
+            let existing = {};
+            if (fs.existsSync(filePath)) {
+                try {
+                    existing = JSON.parse(fs.readFileSync(filePath));
+                } catch {
+                    existing = {};
+                }
+            }
+
+            const newData = JSON.parse(body);
+
+            // 🔥 per pagina opslaan
+            existing[newData.page] = newData.html;
+
+            fs.writeFileSync(filePath, JSON.stringify(existing, null, 2));
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'saved' }));
+        });
+
+        return;
+    }
+
+    // LOAD
+
+    // LOAD
+    if (req.url === '/api/load') {
+        const data = readData();
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(data));
+
+        return;
+    }
+
 
     const decodedUrl = decodeURIComponent(req.url);
     let filePath = path.join(__dirname, decodedUrl === '/' ? 'index.html' : decodedUrl);
